@@ -12,7 +12,8 @@ slope = (center_y - base_y) / (center_x - base_x)
 theta = math.atan(slope)
 
 class Monster:
-    def __init__(self, x, y, health, vx, vy):
+    def __init__(self, tag, x, y, health, vx, vy):
+        self.tag = int(tag)
         self.x = int(x)
         self.y = int(y)
         self.health = int(health)
@@ -20,32 +21,60 @@ class Monster:
         self.vy = int(vy)
         self.dist = math.sqrt((base_x - x)**2 + (base_y - y)**2)
 
+    def calc_hero_dists(self, hero_list):
+        self.hero_dists = [math.sqrt((h.x - self.next_xpos())**2 + (h.y - self.next_ypos())**2) for h in hero_list]
+
+    def next_xpos(self):
+        return self.x + self.vx
+
+    def next_ypos(self):
+        return self.y + self.vy
+
 
 class Hero:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        self.action = None
 
-    def calc_monster_dists(self, monsters):
-        pairs = list(map(lambda m: (m, m.x, m.y), monsters))
-        self.monsters = [(m, math.sqrt((mx - self.x)**2 + (my - self.y)**2)) for (m,mx,my) in pairs]
-        self.monsters.sort(key=lambda m: m[1])
+    def set_target(self, target):
+        x = target.next_xpos()
+        y = target.next_ypos()
+        self.action = f"MOVE {x} {y}"
 
-    def action(self):
-        if len(self.monsters) == 0:
+    def get_action(self):
+        if self.action:
+            return self.action
+        else:
             return "WAIT"
 
-        target = self.monsters[0][0]
-        x = target.x + target.vx
-        y = target.y + target.vy
-        
-        return f"MOVE {x} {y}"
+def sort_defense_list(defense_list):
+    defense_list.sort(key=lambda x: x.dist)
+    return defense_list
 
+def take_actions(hero_list, defense_list):
+    if len(defense_list) == 0:
+        for hero in hero_list:
+            print("WAIT")
+        return
 
-def sort_monster_list(monster_list):
-    monster_list.sort(key=lambda x: x.dist)
-    return monster_list
+    if len(defense_list) == 1:
+        for hero in hero_list:
+            x = defense_list[0].next_xpos()
+            y = defense_list[0].next_ypos()
+            print(f"MOVE {x} {y}")
+        return
 
+    secondary_targeted = False
+    for i in range(len(hero_list)):
+        if ((defense_list[0].hero_dists[i] == max(defense_list[0].hero_dists)) and (not secondary_targeted)):
+            hero_list[i].set_target(defense_list[1])
+            secondary_targeted = True
+        else:
+            hero_list[i].set_target(defense_list[0])
+
+    for hero in hero_list:
+        print(hero.get_action())
 
 # game loop
 while True:
@@ -56,30 +85,21 @@ while True:
     entity_count = int(input())  # Amount of heros and monsters you can see
 
     hero_list = []
-    monster_list = []
+    defense_list = []
 
     for i in range(entity_count):
-        # _id: Unique identifier
-        # _type: 0=monster, 1=your hero, 2=opponent hero
-        # x: Position of this entity
-        # shield_life: Ignore for this league; Count down until shield spell fades
-        # is_controlled: Ignore for this league; Equals 1 when this entity is under a control spell
-        # health: Remaining health of this monster
-        # vx: Trajectory of this monster
-        # near_base: 0=monster with no target yet, 1=monster targeting a base
-        # threat_for: Given this monster's trajectory, is it a threat to 1=your base, 2=your opponent's base, 0=neither
         _id, _type, x, y, shield_life, is_controlled, health, vx, vy, near_base, threat_for = [int(j) for j in input().split()]
-    
         if _type == TYPE_HERO:
             hero_list.append(Hero(x, y))
-
         if threat_for == 1:
-            monster_list.append(Monster(x, y, health, vx, vy))
+            defense_list.append(Monster(_id, x, y, health, vx, vy))
     
-    monster_list = sort_monster_list(monster_list)
-    for hero in hero_list:
-        hero.calc_monster_dists(monster_list)
+    ##### GAME LOGIC
 
-    for hero in hero_list:
-        print(hero.action())
+    defense_list = sort_defense_list(defense_list)
+    for m in defense_list:
+        m.calc_hero_dists(hero_list)
+
+    take_actions(hero_list, defense_list)
+
 
