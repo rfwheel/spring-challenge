@@ -10,6 +10,13 @@ center_x = 17630.0 / 2
 center_y = 9000.0 / 2
 slope = (center_y - base_y) / (center_x - base_x)
 theta = math.atan(slope)
+SIDE = 0 if base_x == 0 else 1
+control_toggle = 0
+control_points = [
+    [(17630, 4300), (12930, 9000)],
+    [(0,4700), (4700,0)],
+]
+mana = 0
 
 class Monster:
     def __init__(self, tag, x, y, health, vx, vy):
@@ -20,6 +27,7 @@ class Monster:
         self.vx = int(vx)
         self.vy = int(vy)
         self.dist = math.sqrt((base_x - x)**2 + (base_y - y)**2)
+        self.redirected = False
 
     def calc_hero_dists(self, hero_list):
         self.hero_dists = [math.sqrt((h.x - self.next_xpos())**2 + (h.y - self.next_ypos())**2) for h in hero_list]
@@ -38,6 +46,15 @@ class Hero:
         self.action = None
 
     def set_target(self, target):
+        global control_toggle
+        if self.should_cast_control(target):
+            target.redirected = True
+            control_toggle = control_toggle ^ 1
+            control_x = control_points[SIDE][control_toggle][0]
+            control_y = control_points[SIDE][control_toggle][1]
+            self.action = f"SPELL CONTROL {target.tag} {control_x} {control_y}"
+            return
+
         x = target.next_xpos()
         y = target.next_ypos()
         self.action = f"MOVE {x} {y}"
@@ -47,6 +64,21 @@ class Hero:
             return self.action
         else:
             return "WAIT"
+
+    def get_dist(self, x, y):
+        return math.sqrt((x - self.x)**2 + (y - self.y)**2)
+
+    def should_cast_control(self, monster):
+        if mana < 10:
+            return False
+        if self.get_dist(monster.x, monster.y) > 2200:
+            return False
+        if monster.health < 17:
+            return False
+        if monster.redirected:
+            return False
+        return True
+
 
 def sort_defense_list(defense_list):
     defense_list.sort(key=lambda x: x.dist)
@@ -60,9 +92,8 @@ def take_actions(hero_list, defense_list):
 
     if len(defense_list) == 1:
         for hero in hero_list:
-            x = defense_list[0].next_xpos()
-            y = defense_list[0].next_ypos()
-            print(f"MOVE {x} {y}")
+            hero.set_target(defense_list[0])
+            print(hero.get_action())
         return
 
     secondary_targeted = False
