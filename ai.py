@@ -4,6 +4,9 @@ import math
 TYPE_MONSTER = 0
 TYPE_HERO = 1
 
+THREAT_NEUTRAL = 0
+THREAT_MINE = 1
+
 base_x, base_y = [int(i) for i in input().split()]
 heroes_per_player = int(input())  # Always 3
 center_x = 17630.0 / 2
@@ -16,6 +19,21 @@ control_points = [
     [(17630, 4300), (12930, 9000)],
     [(0,4700), (4700,0)],
 ]
+home_dist = 6000
+home_points = [
+    [
+        (int(home_dist*math.cos(math.pi/4)), int(home_dist*math.sin(math.pi/4))),
+        (int(home_dist*math.cos(math.pi/8)), int(home_dist*math.sin(math.pi/8))),
+        (int(home_dist*math.cos(3*math.pi/8)), int(home_dist*math.sin(3*math.pi/8))),
+    ],
+]
+home_points.append(
+    [
+        (17630 - home_points[0][0][0], 9000 - home_points[0][0][1]),
+        (17630 - home_points[0][1][0], 9000 - home_points[0][1][1]),
+        (17630 - home_points[0][2][0], 9000 - home_points[0][2][1]),
+    ],
+)
 mana = 0
 
 class Monster:
@@ -26,7 +44,7 @@ class Monster:
         self.health = int(health)
         self.vx = int(vx)
         self.vy = int(vy)
-        self.dist = math.sqrt((base_x - x)**2 + (base_y - y)**2)
+        self.base_dist = math.sqrt((base_x - x)**2 + (base_y - y)**2)
         self.redirected = False
 
     def calc_hero_dists(self, hero_list):
@@ -38,15 +56,20 @@ class Monster:
     def next_ypos(self):
         return self.y + self.vy
 
+    def get_next_dist(self, x, y):
+        return math.sqrt((x - self.next_xpos())**2 + (y - self.next_ypos())**2)
+
 
 class Hero:
-    def __init__(self, x, y):
+    def __init__(self, x, y, index):
         self.x = x
         self.y = y
+        self.i = index
         self.action = None
 
     def set_target(self, target):
         global control_toggle
+
         if self.should_cast_control(target):
             target.redirected = True
             control_toggle = control_toggle ^ 1
@@ -55,18 +78,42 @@ class Hero:
             self.action = f"SPELL CONTROL {target.tag} {control_x} {control_y}"
             return
 
-        x = target.next_xpos()
-        y = target.next_ypos()
-        self.action = f"MOVE {x} {y}"
+        if self.should_attack(target):
+            x = target.next_xpos()
+            y = target.next_ypos()
+            self.action = f"MOVE {x} {y}"
+            return
 
-    def get_action(self):
+    def get_action(self, neutral_list):
         if self.action:
             return self.action
-        else:
-            return "WAIT"
+
+        homex = home_points[SIDE][self.i][0]
+        homey = home_points[SIDE][self.i][1]
+
+        for neutral in neutral_list:
+            if self.get_dist(neutral.next_xpos(), neutral.next_ypos()) > 1500:
+                continue
+            if neutral.get_next_dist(homex, homey) > 1500:
+                continue
+            return f"MOVE {neutral.next_xpos()} {neutral.next_ypos()}"
+
+        return f"MOVE {homex} {homey}"
 
     def get_dist(self, x, y):
         return math.sqrt((x - self.x)**2 + (y - self.y)**2)
+
+    def should_attack(self, monster):
+        if monster.redirected:
+            return False
+
+        if monster.base_dist < 5500:
+            return True
+
+        if self.get_dist(monster.next_xpos(), monster.next_ypos()) > 2500:
+            return False
+
+        return True
 
     def should_cast_control(self, monster):
         if mana < 10:
@@ -75,25 +122,27 @@ class Hero:
             return False
         if monster.health < 17:
             return False
+        if monster.base_dist < 4500:
+            return False
         if monster.redirected:
             return False
         return True
 
 
 def sort_defense_list(defense_list):
-    defense_list.sort(key=lambda x: x.dist)
+    defense_list.sort(key=lambda x: x.base_dist)
     return defense_list
 
-def take_actions(hero_list, defense_list):
+def take_actions(hero_list, defense_list, neutral_list):
     if len(defense_list) == 0:
         for hero in hero_list:
-            print("WAIT")
+            print(hero.get_action(neutral_list))
         return
 
     if len(defense_list) == 1:
         for hero in hero_list:
             hero.set_target(defense_list[0])
-            print(hero.get_action())
+            print(hero.get_action(neutral_list))
         return
 
     secondary_targeted = False
@@ -105,7 +154,7 @@ def take_actions(hero_list, defense_list):
             hero_list[i].set_target(defense_list[0])
 
     for hero in hero_list:
-        print(hero.get_action())
+        print(hero.get_action(neutral_list))
 
 # game loop
 while True:
@@ -117,13 +166,16 @@ while True:
 
     hero_list = []
     defense_list = []
+    neutral_list = []
 
     for i in range(entity_count):
         _id, _type, x, y, shield_life, is_controlled, health, vx, vy, near_base, threat_for = [int(j) for j in input().split()]
         if _type == TYPE_HERO:
-            hero_list.append(Hero(x, y))
-        if threat_for == 1:
+            hero_list.append(Hero(x, y, len(hero_list)))
+        if threat_for == THREAT_MINE:
             defense_list.append(Monster(_id, x, y, health, vx, vy))
+        if threat_for == THREAT_NEUTRAL:
+            neutral_list.append(Monster(_id, x, y, health, vx, vy))
     
     ##### GAME LOGIC
 
@@ -131,6 +183,6 @@ while True:
     for m in defense_list:
         m.calc_hero_dists(hero_list)
 
-    take_actions(hero_list, defense_list)
+    take_actions(hero_list, defense_list, neutral_list)
 
 
