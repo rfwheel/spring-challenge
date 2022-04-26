@@ -19,12 +19,12 @@ control_points = [
     [(17630, 4300), (12930, 9000)],
     [(0,4700), (4700,0)],
 ]
-home_dist = 6000
+home_dist = 7000
 home_points = [
     [
         (int(home_dist*math.cos(math.pi/4)), int(home_dist*math.sin(math.pi/4))),
-        (int(home_dist*math.cos(math.pi/8)), int(home_dist*math.sin(math.pi/8))),
-        (int(home_dist*math.cos(3*math.pi/8)), int(home_dist*math.sin(3*math.pi/8))),
+        (int(home_dist*math.cos(math.pi/12)), int(home_dist*math.sin(math.pi/12))),
+        (int(home_dist*math.cos(5*math.pi/12)), int(home_dist*math.sin(5*math.pi/12))),
     ],
 ]
 home_points.append(
@@ -37,7 +37,7 @@ home_points.append(
 mana = 0
 
 class Monster:
-    def __init__(self, tag, x, y, health, vx, vy):
+    def __init__(self, tag, x, y, health, vx, vy, shield_life):
         self.tag = int(tag)
         self.x = int(x)
         self.y = int(y)
@@ -45,6 +45,7 @@ class Monster:
         self.vx = int(vx)
         self.vy = int(vy)
         self.base_dist = math.sqrt((base_x - x)**2 + (base_y - y)**2)
+        self.shield = shield_life
         self.redirected = False
 
     def calc_hero_dists(self, hero_list):
@@ -84,20 +85,22 @@ class Hero:
             self.action = f"MOVE {x} {y}"
             return
 
-    def get_action(self, neutral_list):
+    def get_action(self, defense_list, neutral_list):
         if self.action:
             return self.action
 
-        homex = home_points[SIDE][self.i][0]
-        homey = home_points[SIDE][self.i][1]
+        defense_list.sort(key=lambda x: 50000*x.base_dist + x.hero_dists[self.i])
+        for threat in defense_list:
+            self.set_target(threat)
+            if self.action is not None:
+                return self.action
 
-        for neutral in neutral_list:
-            if self.get_dist(neutral.next_xpos(), neutral.next_ypos()) > 1500:
-                continue
-            if neutral.get_next_dist(homex, homey) > 1500:
-                continue
+        neutral = self.get_farming_target(neutral_list)
+        if neutral is not None:
             return f"MOVE {neutral.next_xpos()} {neutral.next_ypos()}"
 
+        homex = home_points[SIDE][self.i][0]
+        homey = home_points[SIDE][self.i][1]
         return f"MOVE {homex} {homey}"
 
     def get_dist(self, x, y):
@@ -120,13 +123,25 @@ class Hero:
             return False
         if self.get_dist(monster.x, monster.y) > 2200:
             return False
-        if monster.health < 17:
+        if monster.health < 15:
             return False
         if monster.base_dist < 4500:
+            return False
+        if monster.shield > 0:
             return False
         if monster.redirected:
             return False
         return True
+
+    def get_farming_target(self, neutral_list):
+        homex = home_points[SIDE][self.i][0]
+        homey = home_points[SIDE][self.i][1]
+        for neutral in neutral_list:
+            if self.get_dist(neutral.next_xpos(), neutral.next_ypos()) > 3000:
+                continue
+            if neutral.get_next_dist(homex, homey) > 3000:
+                continue
+            return neutral
 
 
 def sort_defense_list(defense_list):
@@ -136,13 +151,13 @@ def sort_defense_list(defense_list):
 def take_actions(hero_list, defense_list, neutral_list):
     if len(defense_list) == 0:
         for hero in hero_list:
-            print(hero.get_action(neutral_list))
+            print(hero.get_action(defense_list, neutral_list))
         return
 
     if len(defense_list) == 1:
         for hero in hero_list:
             hero.set_target(defense_list[0])
-            print(hero.get_action(neutral_list))
+            print(hero.get_action(defense_list, neutral_list))
         return
 
     secondary_targeted = False
@@ -154,7 +169,7 @@ def take_actions(hero_list, defense_list, neutral_list):
             hero_list[i].set_target(defense_list[0])
 
     for hero in hero_list:
-        print(hero.get_action(neutral_list))
+        print(hero.get_action(defense_list, neutral_list))
 
 # game loop
 while True:
@@ -173,9 +188,9 @@ while True:
         if _type == TYPE_HERO:
             hero_list.append(Hero(x, y, len(hero_list)))
         if threat_for == THREAT_MINE:
-            defense_list.append(Monster(_id, x, y, health, vx, vy))
+            defense_list.append(Monster(_id, x, y, health, vx, vy, shield_life))
         if threat_for == THREAT_NEUTRAL:
-            neutral_list.append(Monster(_id, x, y, health, vx, vy))
+            neutral_list.append(Monster(_id, x, y, health, vx, vy, shield_life))
     
     ##### GAME LOGIC
 
