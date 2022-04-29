@@ -3,14 +3,16 @@ import math
 
 TYPE_MONSTER = 0
 TYPE_HERO = 1
+TYPE_ENEMY = 2
 
 THREAT_NEUTRAL = 0
 THREAT_MINE = 1
+THREAT_OPPONENT = 2
 
 base_x, base_y = [int(i) for i in input().split()]
 heroes_per_player = int(input())  # Always 3
-center_x = 17630.0 / 2
-center_y = 9000.0 / 2
+center_x = int(17630 / 2)
+center_y = int(9000 / 2)
 slope = (center_y - base_y) / (center_x - base_x)
 theta = math.atan(slope)
 SIDE = 0 if base_x == 0 else 1
@@ -47,6 +49,7 @@ class Monster:
         self.base_dist = math.sqrt((base_x - x)**2 + (base_y - y)**2)
         self.shield = shield_life
         self.redirected = False
+        self.blown = False
 
     def calc_hero_dists(self, hero_list):
         self.hero_dists = [math.sqrt((h.x - self.next_xpos())**2 + (h.y - self.next_ypos())**2) for h in hero_list]
@@ -62,14 +65,28 @@ class Monster:
 
 
 class Hero:
-    def __init__(self, x, y, index):
+    def __init__(self, tag, x, y, index, shield_life):
+        self.tag = tag
         self.x = x
         self.y = y
         self.i = index
+        self.shield = shield_life
         self.action = None
+
+    def set_enemy_hero_dist(self, enemy_heroes):
+        if len(enemy_heroes) == 0:
+            self.enemy_hero_dist = 10000
+            return
+        dists = list(map(lambda e: self.get_dist(e.x, e.y), enemy_heroes))
+        self.enemy_hero_dist = min(dists)
 
     def set_target(self, target):
         global control_toggle
+
+        if self.should_cast_wind(target):
+            target.blown = True
+            self.action = f"SPELL WIND {center_x} {center_y}"
+            return
 
         if self.should_cast_control(target):
             target.redirected = True
@@ -79,13 +96,17 @@ class Hero:
             self.action = f"SPELL CONTROL {target.tag} {control_x} {control_y}"
             return
 
+        if self.should_cast_shield(target):
+            self.action = f"SPELL SHIELD {self.tag}"
+            return
+
         if self.should_attack(target):
             x = target.next_xpos()
             y = target.next_ypos()
             self.action = f"MOVE {x} {y}"
             return
 
-    def get_action(self, defense_list, neutral_list):
+    def get_action(self, defense_list, neutral_list, all_list):
         if self.action:
             return self.action
 
@@ -98,6 +119,10 @@ class Hero:
         neutral = self.get_farming_target(neutral_list)
         if neutral is not None:
             return f"MOVE {neutral.next_xpos()} {neutral.next_ypos()}"
+
+        target = self.get_farming_target(all_list)
+        if target is not None:
+            return f"MOVE {target.next_xpos()} {target.next_ypos()}"
 
         homex = home_points[SIDE][self.i][0]
         homey = home_points[SIDE][self.i][1]
@@ -133,6 +158,30 @@ class Hero:
             return False
         return True
 
+    def should_cast_wind(self, monster):
+        if mana < 10:
+            return False
+        if self.get_dist(monster.x, monster.y) > 1280:
+            return False
+        if monster.base_dist > 4000:
+            return False
+        if monster.shield > 0:
+            return False
+        if monster.blown:
+            return False
+        return True
+
+    def should_cast_shield(self, monster):
+        if mana < 20:
+            return False
+        if monster.base_dist > 5000:
+            return False
+        if self.enemy_hero_dist > 2500:
+            return False
+        if self.shield > 0:
+            return False
+        return True
+
     def get_farming_target(self, neutral_list):
         homex = home_points[SIDE][self.i][0]
         homey = home_points[SIDE][self.i][1]
@@ -148,16 +197,16 @@ def sort_defense_list(defense_list):
     defense_list.sort(key=lambda x: x.base_dist)
     return defense_list
 
-def take_actions(hero_list, defense_list, neutral_list):
+def take_actions(hero_list, defense_list, neutral_list, all_list):
     if len(defense_list) == 0:
         for hero in hero_list:
-            print(hero.get_action(defense_list, neutral_list))
+            print(hero.get_action(defense_list, neutral_list, all_list))
         return
 
     if len(defense_list) == 1:
         for hero in hero_list:
             hero.set_target(defense_list[0])
-            print(hero.get_action(defense_list, neutral_list))
+            print(hero.get_action(defense_list, neutral_list, all_list))
         return
 
     secondary_targeted = False
@@ -169,7 +218,7 @@ def take_actions(hero_list, defense_list, neutral_list):
             hero_list[i].set_target(defense_list[0])
 
     for hero in hero_list:
-        print(hero.get_action(defense_list, neutral_list))
+        print(hero.get_action(defense_list, neutral_list, all_list))
 
 # game loop
 while True:
@@ -180,24 +229,34 @@ while True:
     entity_count = int(input())  # Amount of heros and monsters you can see
 
     hero_list = []
+    enemy_heroes = []
     defense_list = []
     neutral_list = []
+    attack_list = []
 
     for i in range(entity_count):
         _id, _type, x, y, shield_life, is_controlled, health, vx, vy, near_base, threat_for = [int(j) for j in input().split()]
         if _type == TYPE_HERO:
-            hero_list.append(Hero(x, y, len(hero_list)))
+            hero_list.append(Hero(_id, x, y, len(hero_list), shield_life))
+        if _type == TYPE_ENEMY:
+            enemy_heroes.append(Hero(_id, x, y, len(hero_list), shield_life))
         if threat_for == THREAT_MINE:
             defense_list.append(Monster(_id, x, y, health, vx, vy, shield_life))
         if threat_for == THREAT_NEUTRAL:
             neutral_list.append(Monster(_id, x, y, health, vx, vy, shield_life))
+        if threat_for == THREAT_OPPONENT:
+            attack_list.append(Monster(_id, x, y, health, vx, vy, shield_life))
     
     ##### GAME LOGIC
+    all_list = defense_list + neutral_list + attack_list
+
+    for hero in hero_list:
+        hero.set_enemy_hero_dist(enemy_heroes)
 
     defense_list = sort_defense_list(defense_list)
     for m in defense_list:
         m.calc_hero_dists(hero_list)
 
-    take_actions(hero_list, defense_list, neutral_list)
+    take_actions(hero_list, defense_list, neutral_list, all_list)
 
 
